@@ -11,7 +11,9 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
 
     TSMBuffer bufp;
     TSMLoc hdr_loc;
-    TSMLoc field_loc;
+    TSMLoc location_loc;
+    TSMLoc link_loc;
+    TSMLoc next_loc;
 
     if (TSHttpTxnClientRespGet(txnp, &bufp, &hdr_loc) != TS_SUCCESS) {
       TSError("Couldn't retrieve client request header\n");
@@ -19,17 +21,26 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
       goto done;
     }
 
-    field_loc = TSMimeHdrFieldFind(bufp, hdr_loc, TS_MIME_FIELD_LOCATION, TS_MIME_LEN_LOCATION);
-    if (!field_loc) {
+    location_loc = TSMimeHdrFieldFind(bufp, hdr_loc, TS_MIME_FIELD_LOCATION, TS_MIME_LEN_LOCATION);
+    if (!location_loc) {
       TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdr_loc);
 
       goto done;
     }
 
-    TSMimeHdrFieldValuesClear(bufp, hdr_loc, field_loc);
-    TSMimeHdrFieldValueStringInsert(bufp, hdr_loc, field_loc, -1, "http://example.com/", 19);
+    link_loc = TSMimeHdrFieldFind(bufp, hdr_loc, "Link", 4);
+    while (link_loc) {
+      TSMimeHdrFieldValuesClear(bufp, hdr_loc, location_loc);
+      TSMimeHdrFieldValueStringInsert(bufp, hdr_loc, location_loc, -1, "http://example.com/", 19);
 
-    TSHandleMLocRelease(bufp, hdr_loc, field_loc);
+      next_loc = TSMimeHdrFieldNextDup(bufp, hdr_loc, link_loc);
+
+      TSHandleMLocRelease(bufp, hdr_loc, link_loc);
+
+      link_loc = next_loc;
+    }
+
+    TSHandleMLocRelease(bufp, hdr_loc, location_loc);
     TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdr_loc);
 
 done:
