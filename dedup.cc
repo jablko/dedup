@@ -15,6 +15,12 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
     TSMLoc link_loc;
     TSMLoc next_loc;
 
+    int idx;
+    int count;
+
+    const char *value;
+    int length;
+
     if (TSHttpTxnClientRespGet(txnp, &bufp, &hdr_loc) != TS_SUCCESS) {
       TSError("Couldn't retrieve client request header\n");
 
@@ -30,8 +36,14 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
 
     link_loc = TSMimeHdrFieldFind(bufp, hdr_loc, "Link", 4);
     while (link_loc) {
-      TSMimeHdrFieldValuesClear(bufp, hdr_loc, location_loc);
-      TSMimeHdrFieldValueStringInsert(bufp, hdr_loc, location_loc, -1, "http://example.com/", 19);
+
+      count = TSMimeHdrFieldValuesCount(bufp, hdr_loc, link_loc);
+      for (idx = 0; idx < count; idx++) {
+        value = TSMimeHdrFieldValueStringGet(bufp, hdr_loc, link_loc, idx, &length);
+
+        TSMimeHdrFieldValuesClear(bufp, hdr_loc, location_loc);
+        TSMimeHdrFieldValueStringInsert(bufp, hdr_loc, location_loc, -1, value, length);
+      }
 
       next_loc = TSMimeHdrFieldNextDup(bufp, hdr_loc, link_loc);
 
