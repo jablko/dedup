@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <ts/ts.h>
 
+#include <string.h>
+#include <HttpCompat.h>
+
 typedef struct {
 
   TSHttpTxn txnp;
@@ -115,7 +118,11 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
 
       count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, link_loc);
       for (idx = 0; idx < count; idx++) {
+
         value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, link_loc, idx, &length);
+        if (!HttpCompat::lookup_param_in_semicolon_string(value, length, const_cast<char*>("rel"), const_cast<char*>("duplicate"), 9)) {
+          continue;
+        }
 
         contp = TSContCreate(handler, NULL);
         TSContDataSet(contp, info);
