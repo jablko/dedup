@@ -17,15 +17,6 @@ handler(TSCont contp, TSEvent event, void *edata)
 
   switch (event) {
   case TS_EVENT_CACHE_OPEN_READ:
-
-    TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
-    TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
-
-    TSHttpTxnReenable(info->txnp, TS_EVENT_HTTP_CONTINUE);
-
-    TSfree(info);
-    TSContDestroy(contp);
-
     break;
 
   case TS_EVENT_CACHE_OPEN_READ_FAILED:
@@ -33,19 +24,19 @@ handler(TSCont contp, TSEvent event, void *edata)
     TSMimeHdrFieldValuesClear(info->bufp, info->hdr_loc, info->location_loc);
     TSMimeHdrFieldValueStringInsert(info->bufp, info->hdr_loc, info->location_loc, -1, "http://example.com/", 19);
 
-    TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
-    TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
-
-    TSHttpTxnReenable(info->txnp, TS_EVENT_HTTP_CONTINUE);
-
-    TSfree(info);
-    TSContDestroy(contp);
-
     break;
 
   default:
     TSAssert(!"Unexpected event");
   }
+
+  TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
+  TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
+
+  TSHttpTxnReenable(info->txnp, TS_EVENT_HTTP_CONTINUE);
+
+  TSfree(info);
+  TSContDestroy(contp);
 
   return 0;
 }
@@ -53,14 +44,11 @@ handler(TSCont contp, TSEvent event, void *edata)
 static int
 dedup_plugin(TSCont contp, TSEvent event, void *edata)
 {
-  TSHttpTxn txnp = (TSHttpTxn) edata;
+  Info *info = (Info*) TSmalloc(sizeof(Info));
+  info->txnp = (TSHttpTxn) edata;
 
   switch (event) {
   case TS_EVENT_HTTP_SEND_RESPONSE_HDR:
-
-    TSMBuffer bufp;
-    TSMLoc hdr_loc;
-    TSMLoc location_loc;
 
     const char *value;
     int length;
@@ -74,10 +62,8 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
     int idx;
     int count;
 
-    if (TSHttpTxnClientRespGet(txnp, &bufp, &hdr_loc) != TS_SUCCESS) {
+    if (TSHttpTxnClientRespGet(info->txnp, &info->bufp, &info->hdr_loc) != TS_SUCCESS) {
       TSError("Couldn't retrieve client request header\n");
-
-      TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
 
       break;
     }
@@ -90,28 +76,24 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
      * Then scan if URL already exist in cache */
 
     /* If response has "Location: ..." header */
-    location_loc = TSMimeHdrFieldFind(bufp, hdr_loc, TS_MIME_FIELD_LOCATION, TS_MIME_LEN_LOCATION);
-    if (!location_loc) {
-      TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdr_loc);
-
-      TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
+    info->location_loc = TSMimeHdrFieldFind(info->bufp, info->hdr_loc, TS_MIME_FIELD_LOCATION, TS_MIME_LEN_LOCATION);
+    if (!info->location_loc) {
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
       break;
     }
 
-    value = TSMimeHdrFieldValueStringGet(bufp, hdr_loc, location_loc, 0, &length);
+    value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->location_loc, 0, &length);
 
     /* If can't parse or lookup "Location: ..." URL, should still check if
      * response has RFC 6249 "Link: <...>; rel=duplicate" header? No: Can't
      * parse or lookup URL in "Location: ..." header is error */
-    TSUrlCreate(bufp, &url_loc);
-    if (TSUrlParse(bufp, url_loc, &value, value + length) != TS_PARSE_DONE) {
+    TSUrlCreate(info->bufp, &url_loc);
+    if (TSUrlParse(info->bufp, url_loc, &value, value + length) != TS_PARSE_DONE) {
 
-      TSHandleMLocRelease(bufp, TS_NULL_MLOC, url_loc);
-      TSHandleMLocRelease(bufp, hdr_loc, location_loc);
-      TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdr_loc);
-
-      TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+      TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
       break;
     }
@@ -120,63 +102,55 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
     if (TSCacheKeyDigestFromUrlSet(key, url_loc) != TS_SUCCESS) {
       TSCacheKeyDestroy(key);
 
-      TSHandleMLocRelease(bufp, TS_NULL_MLOC, url_loc);
-      TSHandleMLocRelease(bufp, hdr_loc, location_loc);
-      TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdr_loc);
-
-      TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+      TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
       break;
     }
 
     /* ... and RFC 6249 "Link: <...>; rel=duplicate" header */
-    link_loc = TSMimeHdrFieldFind(bufp, hdr_loc, "Link", 4);
+    link_loc = TSMimeHdrFieldFind(info->bufp, info->hdr_loc, "Link", 4);
     while (link_loc) {
 
-      count = TSMimeHdrFieldValuesCount(bufp, hdr_loc, link_loc);
+      count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, link_loc);
       for (idx = 0; idx < count; idx++) {
-        value = TSMimeHdrFieldValueStringGet(bufp, hdr_loc, link_loc, idx, &length);
+        value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, link_loc, idx, &length);
 
         contp = TSContCreate(handler, NULL);
-
-        Info *info = (Info*) TSmalloc(sizeof(Info));
-        info->txnp = txnp;
-        info->bufp = bufp;
-        info->hdr_loc = hdr_loc;
-        info->location_loc = location_loc;
-
         TSContDataSet(contp, info);
-
         TSCacheRead(contp, key);
 
         TSCacheKeyDestroy(key);
 
-        TSHandleMLocRelease(bufp, hdr_loc, link_loc);
-        TSHandleMLocRelease(bufp, TS_NULL_MLOC, url_loc);
+        TSHandleMLocRelease(info->bufp, info->hdr_loc, link_loc);
+        TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
 
         return 0;
       }
 
-      next_loc = TSMimeHdrFieldNextDup(bufp, hdr_loc, link_loc);
+      next_loc = TSMimeHdrFieldNextDup(info->bufp, info->hdr_loc, link_loc);
 
-      TSHandleMLocRelease(bufp, hdr_loc, link_loc);
+      TSHandleMLocRelease(info->bufp, info->hdr_loc, link_loc);
 
       link_loc = next_loc;
     }
 
     TSCacheKeyDestroy(key);
 
-    TSHandleMLocRelease(bufp, TS_NULL_MLOC, url_loc);
-    TSHandleMLocRelease(bufp, hdr_loc, location_loc);
-    TSHandleMLocRelease(bufp, TS_NULL_MLOC, hdr_loc);
-
-    TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
+    TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+    TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
+    TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
     break;
 
   default:
     TSAssert(!"Unexpected event");
   }
+
+  TSHttpTxnReenable(info->txnp, TS_EVENT_HTTP_CONTINUE);
+
+  TSfree(info);
 
   return 0;
 }
