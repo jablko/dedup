@@ -9,23 +9,74 @@ typedef struct {
   TSHttpTxn txnp;
   TSMBuffer bufp;
   TSMLoc hdr_loc;
+
   TSMLoc location_loc;
+
+  TSMLoc url_loc;
+  TSCacheKey key;
+
+  TSMLoc link_loc;
+
+  int idx;
 
 } Info;
 
 static int
-handler(TSCont contp, TSEvent event, void *edata)
+link_handler(TSCont contp, TSEvent event, void *edata)
 {
   Info *info = (Info*) TSContDataGet(contp);
 
+  const char *value;
+  int length;
+
   switch (event) {
   case TS_EVENT_CACHE_OPEN_READ:
+    TSHandleMLocRelease(info->bufp, info->hdr_loc, info->link_loc);
+
+    value = TSUrlStringGet(info->bufp, info->url_loc, &length);
+
+    TSMimeHdrFieldValuesClear(info->bufp, info->hdr_loc, info->location_loc);
+    TSMimeHdrFieldValueStringInsert(info->bufp, info->hdr_loc, info->location_loc, -1, value, length);
+
     break;
 
   case TS_EVENT_CACHE_OPEN_READ_FAILED:
+    TSMLoc next_loc;
 
-    TSMimeHdrFieldValuesClear(info->bufp, info->hdr_loc, info->location_loc);
-    TSMimeHdrFieldValueStringInsert(info->bufp, info->hdr_loc, info->location_loc, -1, "http://example.com/", 19);
+    int count;
+
+    info->idx++;
+    do {
+
+      count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, info->link_loc);
+      for (; info->idx < count; info->idx++) {
+        value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->link_loc, info->idx, &length);
+
+        if (!HttpCompat::lookup_param_in_semicolon_string(value, length, const_cast<char*>("rel"), const_cast<char*>("duplicate"), 9)) {
+          continue;
+        }
+
+        if (TSUrlParse(info->bufp, info->url_loc, &value, value + length) != TS_PARSE_DONE) {
+          continue;
+        }
+
+        if (TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
+          continue;
+        }
+
+        TSCacheRead(contp, info->key);
+
+        return 0;
+      }
+
+      next_loc = TSMimeHdrFieldNextDup(info->bufp, info->hdr_loc, info->link_loc);
+
+      TSHandleMLocRelease(info->bufp, info->hdr_loc, info->link_loc);
+
+      info->link_loc = next_loc;
+      info->idx = 0;
+
+    } while (info->link_loc);
 
     break;
 
@@ -33,6 +84,9 @@ handler(TSCont contp, TSEvent event, void *edata)
     TSAssert(!"Unexpected event");
   }
 
+  TSCacheKeyDestroy(info->key);
+
+  TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->url_loc);
   TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
   TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
@@ -45,7 +99,57 @@ handler(TSCont contp, TSEvent event, void *edata)
 }
 
 static int
-dedup_plugin(TSCont contp, TSEvent event, void *edata)
+location_handler(TSCont contp, TSEvent event, void *edata)
+{
+  Info *info = (Info*) TSContDataGet(contp);
+  TSContDestroy(contp);
+
+  switch (event) {
+  case TS_EVENT_CACHE_OPEN_READ:
+    break;
+
+  case TS_EVENT_CACHE_OPEN_READ_FAILED:
+
+    const char *value;
+    int length;
+
+    value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->link_loc, info->idx, &length);
+
+    if (TSUrlParse(info->bufp, info->url_loc, &value, value + length) != TS_PARSE_DONE) {
+      break;
+    }
+
+    if (TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
+      break;
+    }
+
+    contp = TSContCreate(link_handler, NULL);
+    TSContDataSet(contp, info);
+    TSCacheRead(contp, info->key);
+
+    return 0;
+
+  default:
+    TSAssert(!"Unexpected event");
+  }
+
+  TSHandleMLocRelease(info->bufp, info->hdr_loc, info->link_loc);
+
+  TSCacheKeyDestroy(info->key);
+
+  TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->url_loc);
+  TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
+  TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
+
+  TSHttpTxnReenable(info->txnp, TS_EVENT_HTTP_CONTINUE);
+
+  TSfree(info);
+
+  return 0;
+}
+
+static int
+handler(TSCont contp, TSEvent event, void *edata)
 {
   Info *info = (Info*) TSmalloc(sizeof(Info));
   info->txnp = (TSHttpTxn) edata;
@@ -56,13 +160,8 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
     const char *value;
     int length;
 
-    TSMLoc url_loc;
-    TSCacheKey key;
-
-    TSMLoc link_loc;
     TSMLoc next_loc;
 
-    int idx;
     int count;
 
     if (TSHttpTxnClientRespGet(info->txnp, &info->bufp, &info->hdr_loc) != TS_SUCCESS) {
@@ -91,21 +190,21 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
     /* If can't parse or lookup "Location: ..." URL, should still check if
      * response has RFC 6249 "Link: <...>; rel=duplicate" header? No: Can't
      * parse or lookup URL in "Location: ..." header is error */
-    TSUrlCreate(info->bufp, &url_loc);
-    if (TSUrlParse(info->bufp, url_loc, &value, value + length) != TS_PARSE_DONE) {
+    TSUrlCreate(info->bufp, &info->url_loc);
+    if (TSUrlParse(info->bufp, info->url_loc, &value, value + length) != TS_PARSE_DONE) {
 
-      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->url_loc);
       TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
       TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
       break;
     }
 
-    key = TSCacheKeyCreate();
-    if (TSCacheKeyDigestFromUrlSet(key, url_loc) != TS_SUCCESS) {
-      TSCacheKeyDestroy(key);
+    info->key = TSCacheKeyCreate();
+    if (TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
+      TSCacheKeyDestroy(info->key);
 
-      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+      TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->url_loc);
       TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
       TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
@@ -113,39 +212,34 @@ dedup_plugin(TSCont contp, TSEvent event, void *edata)
     }
 
     /* ... and RFC 6249 "Link: <...>; rel=duplicate" header */
-    link_loc = TSMimeHdrFieldFind(info->bufp, info->hdr_loc, "Link", 4);
-    while (link_loc) {
+    info->link_loc = TSMimeHdrFieldFind(info->bufp, info->hdr_loc, "Link", 4);
+    while (info->link_loc) {
 
-      count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, link_loc);
-      for (idx = 0; idx < count; idx++) {
+      count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, info->link_loc);
+      for (info->idx = 0; info->idx < count; info->idx++) {
 
-        value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, link_loc, idx, &length);
+        value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->link_loc, info->idx, &length);
         if (!HttpCompat::lookup_param_in_semicolon_string(value, length, const_cast<char*>("rel"), const_cast<char*>("duplicate"), 9)) {
           continue;
         }
 
-        contp = TSContCreate(handler, NULL);
+        contp = TSContCreate(location_handler, NULL);
         TSContDataSet(contp, info);
-        TSCacheRead(contp, key);
-
-        TSCacheKeyDestroy(key);
-
-        TSHandleMLocRelease(info->bufp, info->hdr_loc, link_loc);
-        TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+        TSCacheRead(contp, info->key);
 
         return 0;
       }
 
-      next_loc = TSMimeHdrFieldNextDup(info->bufp, info->hdr_loc, link_loc);
+      next_loc = TSMimeHdrFieldNextDup(info->bufp, info->hdr_loc, info->link_loc);
 
-      TSHandleMLocRelease(info->bufp, info->hdr_loc, link_loc);
+      TSHandleMLocRelease(info->bufp, info->hdr_loc, info->link_loc);
 
-      link_loc = next_loc;
+      info->link_loc = next_loc;
     }
 
-    TSCacheKeyDestroy(key);
+    TSCacheKeyDestroy(info->key);
 
-    TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, url_loc);
+    TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->url_loc);
     TSHandleMLocRelease(info->bufp, info->hdr_loc, info->location_loc);
     TSHandleMLocRelease(info->bufp, TS_NULL_MLOC, info->hdr_loc);
 
@@ -176,6 +270,6 @@ TSPluginInit(int argc, const char *argv[])
     TSError("Plugin registration failed\n");
   }
 
-  contp = TSContCreate(dedup_plugin, NULL);
+  contp = TSContCreate(handler, NULL);
   TSHttpHookAdd(TS_HTTP_SEND_RESPONSE_HDR_HOOK, contp);
 }
