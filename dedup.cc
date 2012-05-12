@@ -75,15 +75,9 @@ link_handler(TSCont contp, TSEvent event, void *edata)
          * into the common str*() routines",
          * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
         end = (char*) memchr(start, '>', length - 1);
-        if (!end) {
-          continue;
-        }
-
-        if (TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE) {
-          continue;
-        }
-
-        if (TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
+        if (!end
+            || TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE
+            || TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
           continue;
         }
 
@@ -153,25 +147,9 @@ location_handler(TSCont contp, TSEvent event, void *edata)
      * the common str*() routines",
      * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
     end = (char*) memchr(start, '>', length - 1);
-    if (!end) {
-      contp = TSContCreate(link_handler, NULL);
-      TSContDataSet(contp, info);
-
-      link_handler(contp, TS_EVENT_CACHE_OPEN_READ_FAILED, NULL);
-
-      return 0;
-    }
-
-    if (TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE) {
-      contp = TSContCreate(link_handler, NULL);
-      TSContDataSet(contp, info);
-
-      link_handler(contp, TS_EVENT_CACHE_OPEN_READ_FAILED, NULL);
-
-      return 0;
-    }
-
-    if (TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
+    if (!end
+        || TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE
+        || TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
       contp = TSContCreate(link_handler, NULL);
       TSContDataSet(contp, info);
 
