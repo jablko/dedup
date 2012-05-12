@@ -10,16 +10,22 @@ typedef struct {
   TSMBuffer bufp;
   TSMLoc hdr_loc;
 
+  /* "Location: ..." header */
   TSMLoc location_loc;
 
+  /* Cache key */
   TSMLoc url_loc;
   TSCacheKey key;
 
+  /* RFC 6249 "Link: <...>; rel=duplicate" header */
   TSMLoc link_loc;
 
+  /* Link header field value index */
   int idx;
 
 } Info;
+
+/* Check if RFC 6249 "Link: <...>; rel=duplicate" URL already exist in cache */
 
 static int
 link_handler(TSCont contp, TSEvent event, void *edata)
@@ -30,6 +36,8 @@ link_handler(TSCont contp, TSEvent event, void *edata)
   int length;
 
   switch (event) {
+
+  /* Yes: Update "Location: ..." header and reenable response */
   case TS_EVENT_CACHE_OPEN_READ:
     TSHandleMLocRelease(info->bufp, info->hdr_loc, info->link_loc);
 
@@ -40,6 +48,7 @@ link_handler(TSCont contp, TSEvent event, void *edata)
 
     break;
 
+  /* No: Check next RFC 6249 "Link: <...>; rel=duplicate" URL */
   case TS_EVENT_CACHE_OPEN_READ_FAILED:
     TSMLoc next_loc;
 
@@ -98,6 +107,8 @@ link_handler(TSCont contp, TSEvent event, void *edata)
   return 0;
 }
 
+/* Check if "Location: ..." URL already exist in cache */
+
 static int
 location_handler(TSCont contp, TSEvent event, void *edata)
 {
@@ -105,9 +116,12 @@ location_handler(TSCont contp, TSEvent event, void *edata)
   TSContDestroy(contp);
 
   switch (event) {
+
+  /* Yes: Do nothing, just reenable response */
   case TS_EVENT_CACHE_OPEN_READ:
     break;
 
+  /* No: Check RFC 6249 "Link: <...>; rel=duplicate" URL */
   case TS_EVENT_CACHE_OPEN_READ_FAILED:
 
     const char *value;
