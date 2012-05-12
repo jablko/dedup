@@ -154,15 +154,30 @@ location_handler(TSCont contp, TSEvent event, void *edata)
      * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
     end = (char*) memchr(start, '>', length - 1);
     if (!end) {
-      break;
+      contp = TSContCreate(link_handler, NULL);
+      TSContDataSet(contp, info);
+
+      link_handler(contp, TS_EVENT_CACHE_OPEN_READ_FAILED, NULL);
+
+      return 0;
     }
 
     if (TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE) {
-      break;
+      contp = TSContCreate(link_handler, NULL);
+      TSContDataSet(contp, info);
+
+      link_handler(contp, TS_EVENT_CACHE_OPEN_READ_FAILED, NULL);
+
+      return 0;
     }
 
     if (TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
-      break;
+      contp = TSContCreate(link_handler, NULL);
+      TSContDataSet(contp, info);
+
+      link_handler(contp, TS_EVENT_CACHE_OPEN_READ_FAILED, NULL);
+
+      return 0;
     }
 
     contp = TSContCreate(link_handler, NULL);
