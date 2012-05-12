@@ -54,6 +54,9 @@ link_handler(TSCont contp, TSEvent event, void *edata)
 
     int count;
 
+    const char *start;
+    const char *end;
+
     info->idx++;
     do {
 
@@ -65,7 +68,18 @@ link_handler(TSCont contp, TSEvent event, void *edata)
           continue;
         }
 
-        if (TSUrlParse(info->bufp, info->url_loc, &value, value + length) != TS_PARSE_DONE) {
+        /* link-value = "<" URI-Reference ">" *( ";" link-param ) ; RFC 5988 */
+        start = value + 1;
+
+        /* memchr() vs. strchr() because "not null-terminated cannot be passed
+         * into the common str*() routines",
+         * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
+        end = (char*) memchr(start, '>', length - 1);
+        if (!end) {
+          continue;
+        }
+
+        if (TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE) {
           continue;
         }
 
@@ -127,9 +141,23 @@ location_handler(TSCont contp, TSEvent event, void *edata)
     const char *value;
     int length;
 
+    const char *start;
+    const char *end;
+
     value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->link_loc, info->idx, &length);
 
-    if (TSUrlParse(info->bufp, info->url_loc, &value, value + length) != TS_PARSE_DONE) {
+    /* link-value = "<" URI-Reference ">" *( ";" link-param ) ; RFC 5988 */
+    start = value + 1;
+
+    /* memchr() vs. strchr() because "not null-terminated cannot be passed into
+     * the common str*() routines",
+     * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
+    end = (char*) memchr(start, '>', length - 1);
+    if (!end) {
+      break;
+    }
+
+    if (TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE) {
       break;
     }
 
