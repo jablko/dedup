@@ -297,7 +297,7 @@ TSPluginInit(int argc, const char *argv[])
   TSCont contp;
   TSPluginRegistrationInfo info;
 
-  info.plugin_name = const_cast<char*>("dedup");
+  info.plugin_name = const_cast<char*>("metalink");
   info.vendor_name = const_cast<char*>("Jack Bates");
   info.support_email = const_cast<char*>("jack@nottheoilrig.com");
 
