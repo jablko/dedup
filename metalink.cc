@@ -1,8 +1,7 @@
 #include <stdio.h>
-#include <ts/ts.h>
-
 #include <string.h>
-#include <HttpCompat.h>
+
+#include <ts/ts.h>
 
 typedef struct {
 
@@ -24,6 +23,97 @@ typedef struct {
   int idx;
 
 } Info;
+
+bool rel_duplicate(const char *value, const char *end)
+{
+  int length;
+
+  while (value + 13 /* rel=duplicate */ < end) {
+
+    value += 1;
+    value += strspn(value, " ");
+
+    if (strncmp(value, "rel=", 4)) {
+
+      value = strchr(value, '=');
+      if (!value) {
+        return false;
+      }
+
+      value += 1;
+
+      /* quoted-string */
+      if (*value == '"') {
+
+        for (value += 1;;) {
+
+          value += strcspn(value, "\\\"");
+          if (*value == '"') {
+            value += 1;
+
+            break; // continue 2;
+          }
+
+          value += 2;
+          if (value + 15 /* ";rel=duplicate */ >= end) {
+            return false;
+          }
+        }
+
+      /* ptoken */
+      } else {
+
+        value = strchr(value, ';');
+        if (!value) {
+          return false;
+        }
+      }
+
+      continue;
+    }
+
+    value += 4;
+
+    /* <"> relation-type *( 1*SP relation-type ) <"> */
+    if (*value == '"') {
+
+      for (value += 1;;) {
+
+        length = strcspn(value, " \"");
+        if (strncmp(value, "duplicate", length)) {
+
+          value += length;
+          if (*value == '"') {
+            value += 1;
+
+            break; // continue 2;
+          }
+
+          value += 1;
+          if (value + 15 /* ";rel=duplicate */ >= end) {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+    /* relation-type */
+    } else {
+
+      length = strcspn(value, ";");
+      if (strncmp(value, "duplicate", length)) {
+        value += 1;
+
+        continue;
+      }
+
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /* Check if RFC 6249 "Link: <...>; rel=duplicate" URL already exist in cache */
 
@@ -57,25 +147,24 @@ link_handler(TSCont contp, TSEvent event, void *edata)
     const char *start;
     const char *end;
 
-    info->idx++;
+    info->idx += 1;
     do {
 
       count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, info->link_loc);
-      for (; info->idx < count; info->idx++) {
+      for (; info->idx < count; info->idx += 1) {
         value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->link_loc, info->idx, &length);
 
-        if (!HttpCompat::lookup_param_in_semicolon_string(value, length, const_cast<char*>("rel"), const_cast<char*>("duplicate"), 9)) {
-          continue;
-        }
+        /* "string values returned from marshall buffers are not
+         * null-terminated.  If you need a null-terminated value, then use
+         * TSstrndup to automatically null-terminate a string",
+         * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
+        value = TSstrndup(value, length);
 
         /* link-value = "<" URI-Reference ">" *( ";" link-param ) ; RFC 5988 */
         start = value + 1;
 
-        /* memchr() vs. strchr() because "not null-terminated cannot be passed
-         * into the common str*() routines",
-         * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
-        end = (char*) memchr(start, '>', length - 1);
-        if (!end
+        end = strchr(start, '>');
+        if (!end || !rel_duplicate(end + 1, value + length)
             || TSUrlParse(info->bufp, info->url_loc, &start, end) != TS_PARSE_DONE
             || TSCacheKeyDigestFromUrlSet(info->key, info->url_loc) != TS_SUCCESS) {
           continue;
@@ -199,6 +288,9 @@ handler(TSCont contp, TSEvent event, void *edata)
 
     int count;
 
+    const char *start;
+    const char *end;
+
     if (TSHttpTxnClientRespGet(info->txnp, &info->bufp, &info->hdr_loc) != TS_SUCCESS) {
       TSError("Couldn't retrieve client request header\n");
 
@@ -251,10 +343,20 @@ handler(TSCont contp, TSEvent event, void *edata)
     while (info->link_loc) {
 
       count = TSMimeHdrFieldValuesCount(info->bufp, info->hdr_loc, info->link_loc);
-      for (info->idx = 0; info->idx < count; info->idx++) {
-
+      for (info->idx = 0; info->idx < count; info->idx += 1) {
         value = TSMimeHdrFieldValueStringGet(info->bufp, info->hdr_loc, info->link_loc, info->idx, &length);
-        if (!HttpCompat::lookup_param_in_semicolon_string(value, length, const_cast<char*>("rel"), const_cast<char*>("duplicate"), 9)) {
+
+        /* "string values returned from marshall buffers are not
+         * null-terminated.  If you need a null-terminated value, then use
+         * TSstrndup to automatically null-terminate a string",
+         * http://trafficserver.apache.org/docs/trunk/sdk/http-headers/guide-to-trafficserver-http-header-system/index.en.html */
+        value = TSstrndup(value, length);
+
+        /* link-value = "<" URI-Reference ">" *( ";" link-param ) ; RFC 5988 */
+        start = value + 1;
+
+        end = strchr(start, '>');
+        if (!end || !rel_duplicate(end + 1, value + length)) {
           continue;
         }
 
