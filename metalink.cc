@@ -292,7 +292,7 @@ handler(TSCont contp, TSEvent event, void *edata)
     const char *end;
 
     if (TSHttpTxnClientRespGet(info->txnp, &info->bufp, &info->hdr_loc) != TS_SUCCESS) {
-      TSError("Couldn't retrieve client request header\n");
+      TSError("Couldn't retrieve client response header");
 
       break;
     }
@@ -404,7 +404,7 @@ TSPluginInit(int argc, const char *argv[])
   info.support_email = const_cast<char*>("jack@nottheoilrig.com");
 
   if (TSPluginRegister(TS_SDK_VERSION_3_0, &info) != TS_SUCCESS) {
-    TSError("Plugin registration failed\n");
+    TSError("Plugin registration failed");
   }
 
   contp = TSContCreate(handler, NULL);
