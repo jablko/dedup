@@ -24,7 +24,8 @@ typedef struct {
 
 } Info;
 
-bool rel_duplicate(const char *value, const char *end)
+static bool
+rel_duplicate(const char *value, const char *end)
 {
   int length;
 
