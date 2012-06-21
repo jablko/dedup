@@ -1,7 +1,16 @@
 #include <stdio.h>
 #include <string.h>
 
+#define __STDC_LIMIT_MACROS
+
 #include <ts/ts.h>
+
+typedef struct {
+
+  TSIOBuffer bufp;
+  TSVIO viop;
+
+} ReadData;
 
 typedef struct {
 
@@ -22,7 +31,100 @@ typedef struct {
   /* Link header field value index */
   int idx;
 
-} Data;
+} SendData;
+
+static int
+transform_handler(TSCont contp, TSEvent event, void *edata)
+{
+  ReadData *data = (ReadData *) TSContDataGet(contp);
+
+  switch (event) {
+  case TS_EVENT_IMMEDIATE:
+  case TS_EVENT_VCONN_WRITE_READY:
+    TSVIO viop;
+
+    TSIOBuffer bufp;
+    TSIOBufferReader readerp;
+
+    int avail;
+
+    int ndone;
+    int ntodo;
+
+    /* Can't TSVConnWrite() before TS_HTTP_RESPONSE_TRANSFORM_HOOK */
+    if (!data) {
+      TSVConn connp = TSTransformOutputVConnGet(contp);
+
+      data = (ReadData *) TSmalloc(sizeof(ReadData));
+      TSContDataSet(contp, data);
+
+      data->bufp = TSIOBufferCreate();
+      readerp = TSIOBufferReaderAlloc(data->bufp);
+
+      data->viop = TSVConnWrite(connp, contp, readerp, INT64_MAX);
+    }
+
+    viop = TSVConnWriteVIOGet(contp);
+
+    bufp = TSVIOBufferGet(viop);
+    if (!bufp) {
+      ndone = TSVIONDoneGet(viop);
+      TSVIONBytesSet(data->viop, ndone);
+
+      TSVIOReenable(data->viop);
+
+      break;
+    }
+
+    readerp = TSVIOReaderGet(viop);
+
+    avail = TSIOBufferReaderAvail(readerp);
+    if (avail > 0) {
+      TSIOBufferCopy(data->bufp, readerp, avail, 0);
+
+      TSIOBufferReaderConsume(readerp, avail);
+
+      ndone = TSVIONDoneGet(viop);
+      TSVIONDoneSet(viop, ndone + avail);
+    }
+
+    ntodo = TSVIONTodoGet(viop);
+    if (ntodo > 0) {
+      if (avail > 0) {
+        TSContCall(TSVIOContGet(viop), TS_EVENT_VCONN_WRITE_READY, viop);
+
+        TSVIOReenable(data->viop);
+      }
+    } else {
+      TSContCall(TSVIOContGet(viop), TS_EVENT_VCONN_WRITE_COMPLETE, viop);
+
+      ndone = TSVIONDoneGet(viop);
+      TSVIONBytesSet(data->viop, ndone);
+
+      TSVIOReenable(data->viop);
+    }
+
+    break;
+
+  case TS_EVENT_VCONN_WRITE_COMPLETE:
+    TSVConn connp;
+
+    connp = TSTransformOutputVConnGet(contp);
+    TSVConnShutdown(connp, 0, 1);
+
+    TSIOBufferDestroy(data->bufp);
+
+    TSfree(data);
+    TSContDestroy(contp);
+
+    break;
+
+  default:
+    TSAssert(!"Unexpected event");
+  }
+
+  return 0;
+}
 
 static bool
 rel_duplicate(const char *value, const char *end)
@@ -121,7 +223,7 @@ rel_duplicate(const char *value, const char *end)
 static int
 link_handler(TSCont contp, TSEvent event, void *edata)
 {
-  Data *data = (Data *) TSContDataGet(contp);
+  SendData *data = (SendData *) TSContDataGet(contp);
 
   const char *value;
   int length;
@@ -210,7 +312,7 @@ link_handler(TSCont contp, TSEvent event, void *edata)
 static int
 location_handler(TSCont contp, TSEvent event, void *edata)
 {
-  Data *data = (Data *) TSContDataGet(contp);
+  SendData *data = (SendData *) TSContDataGet(contp);
   TSContDestroy(contp);
 
   switch (event) {
@@ -276,11 +378,19 @@ location_handler(TSCont contp, TSEvent event, void *edata)
 static int
 handler(TSCont contp, TSEvent event, void *edata)
 {
-  Data *data = (Data *) TSmalloc(sizeof(Data));
-  data->txnp = (TSHttpTxn) edata;
+  TSHttpTxn txnp = (TSHttpTxn) edata;
 
   switch (event) {
+  case TS_EVENT_HTTP_READ_RESPONSE_HDR:
+    TSVConn connp;
+
+    connp = TSTransformCreate(transform_handler, txnp);
+    TSHttpTxnHookAdd(txnp, TS_HTTP_RESPONSE_TRANSFORM_HOOK, connp);
+
+    break;
+
   case TS_EVENT_HTTP_SEND_RESPONSE_HDR:
+    SendData *data;
 
     const char *value;
     int length;
@@ -292,8 +402,13 @@ handler(TSCont contp, TSEvent event, void *edata)
     const char *start;
     const char *end;
 
-    if (TSHttpTxnClientRespGet(data->txnp, &data->bufp, &data->hdr_loc) != TS_SUCCESS) {
+    data = (SendData *) TSmalloc(sizeof(SendData));
+    data->txnp = txnp;
+
+    if (TSHttpTxnClientRespGet(txnp, &data->bufp, &data->hdr_loc) != TS_SUCCESS) {
       TSError("Couldn't retrieve client response header");
+
+      TSfree(data);
 
       break;
     }
@@ -310,6 +425,8 @@ handler(TSCont contp, TSEvent event, void *edata)
     if (!data->location_loc) {
       TSHandleMLocRelease(data->bufp, TS_NULL_MLOC, data->hdr_loc);
 
+      TSfree(data);
+
       break;
     }
 
@@ -325,6 +442,8 @@ handler(TSCont contp, TSEvent event, void *edata)
       TSHandleMLocRelease(data->bufp, data->hdr_loc, data->location_loc);
       TSHandleMLocRelease(data->bufp, TS_NULL_MLOC, data->hdr_loc);
 
+      TSfree(data);
+
       break;
     }
 
@@ -335,6 +454,8 @@ handler(TSCont contp, TSEvent event, void *edata)
       TSHandleMLocRelease(data->bufp, TS_NULL_MLOC, data->url_loc);
       TSHandleMLocRelease(data->bufp, data->hdr_loc, data->location_loc);
       TSHandleMLocRelease(data->bufp, TS_NULL_MLOC, data->hdr_loc);
+
+      TSfree(data);
 
       break;
     }
@@ -381,15 +502,15 @@ handler(TSCont contp, TSEvent event, void *edata)
     TSHandleMLocRelease(data->bufp, data->hdr_loc, data->location_loc);
     TSHandleMLocRelease(data->bufp, TS_NULL_MLOC, data->hdr_loc);
 
+    TSfree(data);
+
     break;
 
   default:
     TSAssert(!"Unexpected event");
   }
 
-  TSHttpTxnReenable(data->txnp, TS_EVENT_HTTP_CONTINUE);
-
-  TSfree(data);
+  TSHttpTxnReenable(txnp, TS_EVENT_HTTP_CONTINUE);
 
   return 0;
 }
@@ -409,5 +530,7 @@ TSPluginInit(int argc, const char *argv[])
   }
 
   contp = TSContCreate(handler, NULL);
+
+  TSHttpHookAdd(TS_HTTP_READ_RESPONSE_HDR_HOOK, contp);
   TSHttpHookAdd(TS_HTTP_SEND_RESPONSE_HDR_HOOK, contp);
 }
