@@ -1,14 +1,20 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <gcrypt.h>
+
 #define __STDC_LIMIT_MACROS
 
 #include <ts/ts.h>
 
 typedef struct {
 
+  /* Null transform */
   TSIOBuffer bufp;
   TSVIO viop;
+
+  /* Message digest handle */
+  gcry_md_hd_t hd;
 
 } ReadData;
 
@@ -48,6 +54,11 @@ transform_handler(TSCont contp, TSEvent event, void *edata)
 
     int avail;
 
+    TSIOBufferBlock blockp;
+
+    const char *value;
+    int64_t length;
+
     int ndone;
     int ntodo;
 
@@ -62,6 +73,8 @@ transform_handler(TSCont contp, TSEvent event, void *edata)
       readerp = TSIOBufferReaderAlloc(data->bufp);
 
       data->viop = TSVConnWrite(connp, contp, readerp, INT64_MAX);
+
+      gcry_md_open(&data->hd, GCRY_MD_SHA256, NULL);
     }
 
     viop = TSVConnWriteVIOGet(contp);
@@ -82,12 +95,23 @@ transform_handler(TSCont contp, TSEvent event, void *edata)
     if (avail > 0) {
       TSIOBufferCopy(data->bufp, readerp, avail, 0);
 
+      /* Feed content to message digest */
+      blockp = TSIOBufferReaderStart(readerp);
+      while (blockp) {
+
+        value = TSIOBufferBlockReadStart(blockp, readerp, &length);
+        gcry_md_write(data->hd, value, length);
+
+        blockp = TSIOBufferBlockNext(blockp);
+      }
+
       TSIOBufferReaderConsume(readerp, avail);
 
       ndone = TSVIONDoneGet(viop);
       TSVIONDoneSet(viop, ndone + avail);
     }
 
+    /* If not finished and we copied some content */
     ntodo = TSVIONTodoGet(viop);
     if (ntodo > 0) {
       if (avail > 0) {
@@ -95,6 +119,8 @@ transform_handler(TSCont contp, TSEvent event, void *edata)
 
         TSVIOReenable(data->viop);
       }
+
+    /* If finished */
     } else {
       TSContCall(TSVIOContGet(viop), TS_EVENT_VCONN_WRITE_COMPLETE, viop);
 
@@ -102,6 +128,10 @@ transform_handler(TSCont contp, TSEvent event, void *edata)
       TSVIONBytesSet(data->viop, ndone);
 
       TSVIOReenable(data->viop);
+
+      gcry_md_read(data->hd, NULL);
+
+      gcry_md_close(data->hd);
     }
 
     break;
