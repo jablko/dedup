@@ -9,6 +9,7 @@
 
 typedef struct {
 
+  TSVConn connp;
   TSIOBuffer bufp;
 
 } WriteData;
@@ -31,6 +32,7 @@ typedef struct {
 typedef struct {
 
   TSHttpTxn txnp;
+
   TSMBuffer bufp;
   TSMLoc hdr_loc;
 
@@ -53,11 +55,15 @@ static int
 write_vconn_write_complete(TSCont contp, void *edata)
 {
   WriteData *data = (WriteData *) TSContDataGet(contp);
+  TSContDestroy(contp);
+
+  /* The object is not committed to the cache until the vconnection is closed.
+   * When all data has been transferred, the user (contp) must do a
+   * TSVConnClose() */
+  TSVConnClose(data->connp);
 
   TSIOBufferDestroy(data->bufp);
   TSfree(data);
-
-  TSContDestroy(contp);
 
   return 0;
 }
@@ -91,11 +97,10 @@ cache_open_write(TSCont contp, void *edata)
 
   TSCacheKeyDestroy(transform_data->key);
 
-  TSVConn connp = (TSVConn) edata;
+  WriteData *write_data = (WriteData *) TSmalloc(sizeof(WriteData));
+  write_data->connp = (TSVConn) edata;
 
   contp = TSContCreate(write_handler, NULL);
-
-  WriteData *write_data = (WriteData *) TSmalloc(sizeof(WriteData));
   TSContDataSet(contp, write_data);
 
   write_data->bufp = TSIOBufferCreate();
@@ -127,7 +132,7 @@ cache_open_write(TSCont contp, void *edata)
 
   int nbytes = TSIOBufferWrite(write_data->bufp, value, length);
 
-  TSVConnWrite(connp, contp, readerp, nbytes);
+  TSVConnWrite(write_data->connp, contp, readerp, nbytes);
 
   return 0;
 }
@@ -450,7 +455,6 @@ static int
 location_handler(TSCont contp, TSEvent event, void *edata)
 {
   SendData *data = (SendData *) TSContDataGet(contp);
-
   TSContDestroy(contp);
 
   switch (event) {
