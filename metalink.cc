@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <gcrypt.h>
+#include <openssl/sha.h>
 
 #define __STDC_LIMIT_MACROS
 
@@ -23,7 +23,7 @@ typedef struct {
   TSVIO viop;
 
   /* Message digest handle */
-  gcry_md_hd_t hd;
+  SHA256_CTX c;
 
   TSCacheKey key;
 
@@ -155,6 +155,8 @@ vconn_write_ready(TSCont contp, void *edata)
   const char *value;
   int64_t length;
 
+  char digest[32];
+
   TransformData *data = (TransformData *) TSContDataGet(contp);
 
   /* Can't TSVConnWrite() before TS_HTTP_RESPONSE_TRANSFORM_HOOK */
@@ -166,7 +168,7 @@ vconn_write_ready(TSCont contp, void *edata)
 
     data->viop = TSVConnWrite(connp, contp, readerp, INT64_MAX);
 
-    gcry_md_open(&data->hd, GCRY_MD_SHA256, NULL);
+    SHA256_Init(&data->c);
   }
 
   TSVIO viop = TSVConnWriteVIOGet(contp);
@@ -192,7 +194,7 @@ vconn_write_ready(TSCont contp, void *edata)
     while (blockp) {
 
       value = TSIOBufferBlockReadStart(blockp, readerp, &length);
-      gcry_md_write(data->hd, value, length);
+      SHA256_Update(&data->c, value, length);
 
       blockp = TSIOBufferBlockNext(blockp);
     }
@@ -221,18 +223,14 @@ vconn_write_ready(TSCont contp, void *edata)
 
     TSVIOReenable(data->viop);
 
-    value = (char *) gcry_md_read(data->hd, NULL);
+    SHA256_Final((unsigned char *) digest, &data->c);
 
     data->key = TSCacheKeyCreate();
-    if (TSCacheKeyDigestSet(data->key, value, 32) != TS_SUCCESS) {
-      gcry_md_close(data->hd);
-
+    if (TSCacheKeyDigestSet(data->key, digest, sizeof(digest)) != TS_SUCCESS) {
       return 0;
     }
 
     TSCacheWrite(contp, data->key);
-
-    gcry_md_close(data->hd);
   }
 
   return 0;
