@@ -3,8 +3,6 @@
 
 #include <openssl/sha.h>
 
-#define __STDC_LIMIT_MACROS
-
 #include <ts/ts.h>
 
 typedef struct {
