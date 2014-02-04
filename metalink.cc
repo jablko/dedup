@@ -31,7 +31,6 @@ typedef struct {
  * the content and write it to the cache */
 
 typedef struct {
-
   TSHttpTxn txnp;
 
   /* Null transform */
@@ -49,7 +48,6 @@ typedef struct {
  * "Digest: SHA-256=..." headers */
 
 typedef struct {
-
   TSHttpTxn txnp;
 
   TSMBuffer resp_bufp;
@@ -170,7 +168,6 @@ cache_open_write(TSCont contp, void *edata)
   TSIOBufferReader readerp = TSIOBufferReaderAlloc(write_data->bufp);
 
   int nbytes = TSIOBufferWrite(write_data->bufp, value, length);
-
   TSVConnWrite(write_data->connp, contp, readerp, nbytes);
 
   return 0;
@@ -735,9 +732,9 @@ TSPluginInit(int /* argc ATS_UNUSED */, const char */* argv ATS_UNUSED */[])
 {
   TSPluginRegistrationInfo info;
 
-  info.plugin_name = const_cast<char*>("metalink");
-  info.vendor_name = const_cast<char*>("Jack Bates");
-  info.support_email = const_cast<char*>("jack@nottheoilrig.com");
+  info.plugin_name = const_cast<char *>("metalink");
+  info.vendor_name = const_cast<char *>("Jack Bates");
+  info.support_email = const_cast<char *>("jack@nottheoilrig.com");
 
   if (TSPluginRegister(TS_SDK_VERSION_3_0, &info) != TS_SUCCESS) {
     TSError("Plugin registration failed");
