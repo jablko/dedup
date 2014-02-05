@@ -538,6 +538,12 @@ digest_handler(TSCont contp, TSEvent event, void *edata)
 static int
 location_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
 {
+  const char *value;
+  int length;
+
+  /* ATS_BASE64_DECODE_DSTLEN() */
+  char digest[33];
+
   SendData *data = (SendData *) TSContDataGet(contp);
   TSContDestroy(contp);
 
@@ -549,12 +555,6 @@ location_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
 
   /* No: Check if the "Digest: SHA-256=..." digest already exists in the cache */
   case TS_EVENT_CACHE_OPEN_READ_FAILED:
-
-    const char *value;
-    int length;
-
-    /* ATS_BASE64_DECODE_DSTLEN() */
-    char digest[33];
 
     value = TSMimeHdrFieldValueStringGet(data->resp_bufp, data->hdr_loc, data->digest_loc, data->idx, &length);
     if (TSBase64Decode(value + 8, length - 8, (unsigned char *) digest, sizeof(digest), NULL) != TS_SUCCESS
