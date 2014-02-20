@@ -9,7 +9,7 @@ from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
 
 def callback():
-  print 'not ok 2 The client was left hanging'
+  print 'not ok 2 - The client was left hanging'
 
   reactor.stop()
 
@@ -51,7 +51,7 @@ class factory(protocol.ClientFactory):
         pass
 
       else:
-        print 'ok 2 The client connection closed'
+        print 'ok 2 - The client connection closed'
 
     connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
 
@@ -63,7 +63,7 @@ class factory(protocol.ClientFactory):
           # Who cares what happens now?
           reactor.stop()
 
-        print 'ok 1 Content-Length header'
+        print 'ok 1 - Content-Length header'
 
     # Avoid calling undefined handleResponse() at the end of the content (if
     # the proxy sent the wrong Content-Length header).  (Override

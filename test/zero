@@ -7,7 +7,7 @@ from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
 
 def callback():
-  print 'not ok 1 Why didn\'t the test finish yet?'
+  print 'not ok 1 - Why didn\'t the test finish yet?'
 
   reactor.stop()
 
@@ -46,7 +46,7 @@ class factory(protocol.ClientFactory):
         pass
 
       else:
-        print 'not ok 1 Did the proxy crash?  (The client connection closed.)'
+        print 'not ok 1 - Did the proxy crash?  (The client connection closed.)'
 
     connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
 
@@ -58,14 +58,14 @@ class factory(protocol.ClientFactory):
         pass
 
       else:
-        print 'not ok 1 No Content-Length header'
+        print 'not ok 1 - No Content-Length header'
 
     def handleHeader(ctx, k, v):
       if k.lower() == 'content-length':
         if v != '0':
           print 'not',
 
-        print 'ok 1 Content-Length header'
+        print 'ok 1 - Content-Length header'
 
         reactor.stop()
 

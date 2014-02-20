@@ -16,7 +16,7 @@ from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
 
 def callback():
-  print 'not ok 1 Why didn\'t the test finish yet?'
+  print 'not ok 1 - Why didn\'t the test finish yet?'
 
   reactor.stop()
 
@@ -49,13 +49,13 @@ class factory(protocol.ClientFactory):
       # Open another connection
       class factory(protocol.ClientFactory):
         def clientConnectionFailed(ctx, connector, reason):
-          print 'not ok 1 Did the proxy crash?  (Can\'t open another connection to it.)'
+          print 'not ok 1 - Did the proxy crash?  (Can\'t open another connection to it.)'
 
           reactor.stop()
 
         class protocol(protocol.Protocol):
           def connectionMade(ctx):
-            print 'ok 1 The proxy didn\'t crash (opened another connection to it)'
+            print 'ok 1 - The proxy didn\'t crash (opened another connection to it)'
 
             reactor.stop()
 

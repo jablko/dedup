@@ -8,7 +8,7 @@ from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
 
 def callback():
-  print 'not ok 1 The client was left hanging'
+  print 'not ok 1 - The client was left hanging'
 
   reactor.stop()
 
@@ -51,13 +51,13 @@ class factory(protocol.ClientFactory):
         pass
 
       else:
-        print 'ok 1 The client connection closed'
+        print 'ok 1 - The client connection closed'
 
     connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
 
     def handleHeader(ctx, k, v):
       if k.lower() == 'content-length':
-        print 'not ok 1 Got a Content-Length header vs. a chunked response'
+        print 'not ok 1 - Got a Content-Length header vs. a chunked response'
 
         # Who cares what happens now?
         reactor.stop()
@@ -71,7 +71,7 @@ class factory(protocol.ClientFactory):
 
     def handleResponsePart(ctx, data):
       if data.endswith('0\r\n\r\n'):
-        print 'not ok 1 Got a final chunk'
+        print 'not ok 1 - Got a final chunk'
 
         # Who cares what happens now?
         reactor.stop()
