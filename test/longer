@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-print '1..1 Check that the proxy doesn\'t choke if the server sends more content than advertised in the Content-Length header'
+print '''1..1 longer
+# The proxy doesn't choke if the server sends more content than it advertised'''
 
 # Unlike the contentLength test, don't stop the reactor at the end of the
 # headers.  Give the proxy time to choke.

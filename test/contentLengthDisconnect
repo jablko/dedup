@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-print '1..2 Check that the proxy closes the client connection if the server disconnects prematurely'
+print '''1..2 contentLengthDisconnect
+# The proxy closes the client connection if the server disconnects prematurely'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http

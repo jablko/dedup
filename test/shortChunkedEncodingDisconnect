@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
-print '1..1 Check that the proxy closes the client connection and doesn\'t send a final chunk if the server disconnects before the proxy sends the response headers (without sending a final chunk at the end of a chunked response)'
+print '''1..1 shortChunkedEncodingDisconnect
+# The proxy closes the client connection and doesn't send a final chunk if the
+# server disconnects without sending one, before the proxy sends the response
+# headers'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http

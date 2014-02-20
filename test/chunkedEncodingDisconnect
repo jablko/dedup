@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
-print '1..1 Check that the proxy closes the client connection and doesn\'t send a final chunk if the server disconnects without sending the final chunk at the end of a chunked response'
+print '''1..1 chunkedEncodingDisconnect
+# The proxy closes the client connection and doesn't send a final chunk if the
+# server disconnects without sending one'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http

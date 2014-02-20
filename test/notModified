@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-print '1..2 Check that the proxy doesn\'t crash on a 304 Not Modified response'
+print '''1..2 notModified
+# The proxy doesn't crash on a 304 Not Modified response'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
