@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-print '''1..1 negativeCaching
-# Negative caching doesn't crash the proxy'''
+print '''1..1 headers
+# The response isn't held up until the server starts sending content'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
 
 def callback():
-  print 'not ok 1 - Why didn\'t the test finish yet?'
+  print 'not ok 1 - No response yet'
 
   reactor.stop()
 
@@ -21,20 +21,7 @@ class factory(http.HTTPFactory):
         ctx.client = None
         ctx.clientproto = version
 
-        ctx.setResponseCode(404)
-
-        # Don't send a Content-Length header or a final chunk because
-        # HttpTunnel::producer_run() sends an HTTP_TUNNEL_EVENT_PRECOMPLETE
-        # event at the end of the content which causes
-        # HttpSM::tunnel_handler_server() to turn off negative caching.
-        #
-        # Write some content to reach
-        # ink_assert(cache_info->response_get()->valid()) in
-        # HttpTransact::set_headers_for_cache_write().  It's called when
-        # TransformTerminus sends a TRANSFORM_READ_READY event, but the
-        # transform was only called at the end of the content or if the server
-        # started sending content.
-        ctx.write('negativeCaching')
+        ctx.write('')
 
 server = tcp.Port(0, factory())
 server.startListening()
@@ -63,7 +50,7 @@ class factory(protocol.ClientFactory):
     connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
 
     def handleStatus(ctx, version, status, message):
-      print 'ok 1 - The proxy didn\'t crash (got a reasponse status)'
+      print 'ok 1 - Got the response status'
 
       reactor.stop()
 
