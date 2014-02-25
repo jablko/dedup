@@ -23,7 +23,7 @@
 typedef struct {
 
   TSVConn connp;
-  TSIOBuffer bufp;
+  TSIOBuffer cache_bufp;
 
 } WriteData;
 
@@ -66,7 +66,7 @@ typedef struct {
   /* Digest header field value index */
   int idx;
 
-  TSIOBuffer read_bufp;
+  TSIOBuffer cache_bufp;
 
 } SendData;
 
@@ -85,7 +85,7 @@ write_vconn_write_complete(TSCont contp, void */* edata ATS_UNUSED */)
    * TSVConnClose() */
   TSVConnClose(data->connp);
 
-  TSIOBufferDestroy(data->bufp);
+  TSIOBufferDestroy(data->cache_bufp);
   TSfree(data);
 
   return 0;
@@ -164,10 +164,10 @@ cache_open_write(TSCont contp, void *edata)
   contp = TSContCreate(write_handler, NULL);
   TSContDataSet(contp, write_data);
 
-  write_data->bufp = TSIOBufferCreate();
-  TSIOBufferReader readerp = TSIOBufferReaderAlloc(write_data->bufp);
+  write_data->cache_bufp = TSIOBufferCreate();
+  TSIOBufferReader readerp = TSIOBufferReaderAlloc(write_data->cache_bufp);
 
-  int nbytes = TSIOBufferWrite(write_data->bufp, value, length);
+  int nbytes = TSIOBufferWrite(write_data->cache_bufp, value, length);
   TSVConnWrite(write_data->connp, contp, readerp, nbytes);
 
   return 0;
@@ -388,10 +388,10 @@ cache_open_read(TSCont contp, void *edata)
 
   TSVConn connp = (TSVConn) edata;
 
-  data->read_bufp = TSIOBufferCreate();
+  data->cache_bufp = TSIOBufferCreate();
 
   /* Reuse the TSCacheRead() continuation */
-  TSVConnRead(connp, contp, data->read_bufp, INT64_MAX);
+  TSVConnRead(connp, contp, data->cache_bufp, INT64_MAX);
 
   return 0;
 }
@@ -469,13 +469,13 @@ vconn_read_ready(TSCont contp, void */* edata ATS_UNUSED */)
   SendData *data = (SendData *) TSContDataGet(contp);
   TSContDestroy(contp);
 
-  TSIOBufferReader readerp = TSIOBufferReaderAlloc(data->read_bufp);
+  TSIOBufferReader readerp = TSIOBufferReaderAlloc(data->cache_bufp);
 
   TSIOBufferBlock blockp = TSIOBufferReaderStart(readerp);
 
   value = TSIOBufferBlockReadStart(blockp, readerp, &length);
   if (TSUrlParse(data->resp_bufp, data->url_loc, &value, value + length) != TS_PARSE_DONE) {
-    TSIOBufferDestroy(data->read_bufp);
+    TSIOBufferDestroy(data->cache_bufp);
 
     TSCacheKeyDestroy(data->key);
 
@@ -489,7 +489,7 @@ vconn_read_ready(TSCont contp, void */* edata ATS_UNUSED */)
     return 0;
   }
 
-  TSIOBufferDestroy(data->read_bufp);
+  TSIOBufferDestroy(data->cache_bufp);
 
   if (TSCacheKeyDigestFromUrlSet(data->key, data->url_loc) != TS_SUCCESS) {
     TSCacheKeyDestroy(data->key);
