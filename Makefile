@@ -1,5 +1,5 @@
 all:
-	tsxs -C metalink.cc -o metalink.so
+	tsxs -o metalink.so metalink.cc
 
 check:
 	for e in test/*; do $$e; done | sed ' #\
