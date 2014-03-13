@@ -765,9 +765,9 @@ TSPluginInit(int /* argc ATS_UNUSED */, const char */* argv ATS_UNUSED */[])
 {
   TSPluginRegistrationInfo info;
 
-  info.plugin_name = const_cast<char *>("metalink");
-  info.vendor_name = const_cast<char *>("Jack Bates");
-  info.support_email = const_cast<char *>("jack@nottheoilrig.com");
+  info.plugin_name = (char *) "metalink";
+  info.vendor_name = (char *) "Jack Bates";
+  info.support_email = (char *) "jack@nottheoilrig.com";
 
   if (TSPluginRegister(TS_SDK_VERSION_3_0, &info) != TS_SUCCESS) {
     TSError("Plugin registration failed");
