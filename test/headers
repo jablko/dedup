@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 print '''1..1 headers
-# The response isn't held up until the server starts sending content'''
+# The response isn't held up until the origin starts sending content'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http
@@ -23,10 +23,10 @@ class factory(http.HTTPFactory):
 
         ctx.write('')
 
-server = tcp.Port(0, factory())
-server.startListening()
+origin = tcp.Port(0, factory())
+origin.startListening()
 
-print '# Listening on {0}:{1}'.format(*server.socket.getsockname())
+print '# Listening on {0}:{1}'.format(*origin.socket.getsockname())
 
 class factory(protocol.ClientFactory):
   def clientConnectionFailed(ctx, connector, reason):
@@ -47,7 +47,7 @@ class factory(protocol.ClientFactory):
       else:
         print 'not ok 1 - Did the proxy crash?  (The client connection closed.)'
 
-    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
+    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*origin.socket.getsockname()))
 
     def handleStatus(ctx, version, status, message):
       print 'ok 1 - Got the response status'

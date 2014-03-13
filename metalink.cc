@@ -4,7 +4,7 @@
 
 #include <ts/ts.h>
 
-/* Implement TS_HTTP_READ_RESPONSE_HDR_HOOK to implement a null transform.
+/* Implement TS_HTTP_READ_RESPONSE_HDR_HOOK to implement a null transformation.
  * Compute the SHA-256 digest of the content, write it to the cache and store
  * the request URL at that key.
  *
@@ -35,7 +35,7 @@ typedef struct {
 typedef struct {
   TSHttpTxn txnp;
 
-  /* Null transform */
+  /* Null transformation */
   TSIOBuffer output_bufp;
   TSVIO output_viop;
 
@@ -73,7 +73,7 @@ typedef struct {
 
 } SendData;
 
-/* Implement TS_HTTP_READ_RESPONSE_HDR_HOOK to implement a null transform */
+/* Implement TS_HTTP_READ_RESPONSE_HDR_HOOK to implement a null transformation */
 
 /* Write the digest to the cache and store the request URL at that key */
 
@@ -261,7 +261,7 @@ vconn_write_ready(TSCont contp, void */* edata ATS_UNUSED */)
   }
 
   /* Avoid failed assert "sdk_sanity_check_iocore_structure(readerp) ==
-   * TS_SUCCESS" in TSIOBufferReaderAvail() if the client or server disconnects
+   * TS_SUCCESS" in TSIOBufferReaderAvail() if the client or origin disconnect
    * or the content length is zero */
   TSIOBufferReader readerp = TSVIOReaderGet(input_viop);
   if (readerp) {

@@ -25,21 +25,21 @@ class factory(http.HTTPFactory):
 
         # Don't send a Content-Length header or a final chunk because
         # HttpTunnel::producer_run() sends an HTTP_TUNNEL_EVENT_PRECOMPLETE
-        # event at the end of the content which causes
+        # event at the end of the message which causes
         # HttpSM::tunnel_handler_server() to turn off negative caching.
         #
         # Write some content to reach
         # ink_assert(cache_info->response_get()->valid()) in
         # HttpTransact::set_headers_for_cache_write().  It's called when
         # TransformTerminus sends a TRANSFORM_READ_READY event, but the
-        # transform was only called at the end of the content or if the server
-        # started sending content.
+        # transformation was only called at the end of the message or if the
+        # origin started sending content.
         ctx.write('negativeCaching')
 
-server = tcp.Port(0, factory())
-server.startListening()
+origin = tcp.Port(0, factory())
+origin.startListening()
 
-print '# Listening on {0}:{1}'.format(*server.socket.getsockname())
+print '# Listening on {0}:{1}'.format(*origin.socket.getsockname())
 
 class factory(protocol.ClientFactory):
   def clientConnectionFailed(ctx, connector, reason):
@@ -60,7 +60,7 @@ class factory(protocol.ClientFactory):
       else:
         print 'not ok 1 - Did the proxy crash?  (The client connection closed.)'
 
-    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
+    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*origin.socket.getsockname()))
 
     def handleStatus(ctx, version, status, message):
       print 'ok 1 - The proxy didn\'t crash (got a reasponse status)'

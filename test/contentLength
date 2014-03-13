@@ -24,10 +24,10 @@ class factory(http.HTTPFactory):
         ctx.setHeader('Content-Length', 13)
         ctx.write('contentLength')
 
-server = tcp.Port(0, factory())
-server.startListening()
+origin = tcp.Port(0, factory())
+origin.startListening()
 
-print '# Listening on {0}:{1}'.format(*server.socket.getsockname())
+print '# Listening on {0}:{1}'.format(*origin.socket.getsockname())
 
 class factory(protocol.ClientFactory):
   def clientConnectionFailed(ctx, connector, reason):
@@ -48,7 +48,7 @@ class factory(protocol.ClientFactory):
       else:
         print 'not ok 1 - Did the proxy crash?  (The client connection closed.)'
 
-    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
+    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*origin.socket.getsockname()))
 
     def handleEndHeaders(ctx):
       try:
@@ -69,10 +69,10 @@ class factory(protocol.ClientFactory):
 
         reactor.stop()
 
-    # Avoid calling undefined handleResponse() at the end of the content.
+    # Avoid calling undefined handleResponse() at the end of the message.
     # (Override connectionLost() when the proxy crashes or stop the reactor.)
     #
-    # The data that was already received will be processed (the end of the
+    # Data that was already received will be processed (the end of the
     # headers), then shutdown events will fire (connections will be closed),
     # and then finally the reactor will grind to a halt.
     def handleResponseEnd(ctx):

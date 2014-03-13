@@ -2,7 +2,7 @@
 
 print '''1..2 shortContentLengthDisconnect
 # The proxy sends the right Content-Length header and closes the client
-# connection if the server disconnects before the proxy sends the response
+# connection if the origin disconnects before the proxy sends the response
 # headers'''
 
 from twisted.internet import error, protocol, reactor, tcp
@@ -29,10 +29,10 @@ class factory(http.HTTPFactory):
         # Disconnect before the proxy sends the response headers
         ctx.transport.loseConnection()
 
-server = tcp.Port(0, factory())
-server.startListening()
+origin = tcp.Port(0, factory())
+origin.startListening()
 
-print '# Listening on {0}:{1}'.format(*server.socket.getsockname())
+print '# Listening on {0}:{1}'.format(*origin.socket.getsockname())
 
 class factory(protocol.ClientFactory):
   def clientConnectionFailed(ctx, connector, reason):
@@ -53,7 +53,7 @@ class factory(protocol.ClientFactory):
       else:
         print 'ok 2 - The client connection closed'
 
-    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
+    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*origin.socket.getsockname()))
 
     def handleHeader(ctx, k, v):
       if k.lower() == 'content-length':
@@ -65,7 +65,7 @@ class factory(protocol.ClientFactory):
 
         print 'ok 1 - Content-Length header'
 
-    # Avoid calling undefined handleResponse() at the end of the content (if
+    # Avoid calling undefined handleResponse() at the end of the message (if
     # the proxy sent the wrong Content-Length header).  (Override
     # connectionLost() when the proxy closes the client connection or stop the
     # reactor.)

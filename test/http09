@@ -7,7 +7,7 @@ print '''1..1 http09
 #
 # The proxy crashes only after the response is complete.  It closes the client
 # connection whether it crashes or not because an HTTP/0.9 response is complete
-# only after the server closes its connection, and then the proxy normally does
+# only after the origin closes its connection, and then the proxy normally does
 # the same thing to the client connection (although it upgrades the response to
 # HTTP/1.1).  So the only way to check that the proxy didn't crash is to open
 # another connection.
@@ -30,10 +30,10 @@ class factory(protocol.Factory):
       # The proxy crashes only after the response is complete
       ctx.transport.loseConnection()
 
-server = tcp.Port(0, factory())
-server.startListening()
+origin = tcp.Port(0, factory())
+origin.startListening()
 
-print '# Listening on {0}:{1}'.format(*server.socket.getsockname())
+print '# Listening on {0}:{1}'.format(*origin.socket.getsockname())
 
 class factory(protocol.ClientFactory):
   def clientConnectionFailed(ctx, connector, reason):
@@ -43,7 +43,7 @@ class factory(protocol.ClientFactory):
 
     reactor.stop()
 
-  class protocol(http.HTTPClient):
+  class protocol(protocol.Protocol):
     def connectionLost(ctx, reason):
 
       # Open another connection
@@ -61,7 +61,7 @@ class factory(protocol.ClientFactory):
 
       reactor.callLater(1, tcp.Connector('localhost', 8080, factory(), 30, None, reactor).connect)
 
-    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
+    connectionMade = lambda ctx: ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*origin.socket.getsockname()))
 
 tcp.Connector('localhost', 8080, factory(), 30, None, reactor).connect()
 

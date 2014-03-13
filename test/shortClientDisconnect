@@ -44,10 +44,10 @@ class factory(http.HTTPFactory):
 
         reactor.callLater(1, callback)
 
-server = tcp.Port(0, factory())
-server.startListening()
+origin = tcp.Port(0, factory())
+origin.startListening()
 
-print '# Listening on {0}:{1}'.format(*server.socket.getsockname())
+print '# Listening on {0}:{1}'.format(*origin.socket.getsockname())
 
 class factory(protocol.ClientFactory):
   def clientConnectionFailed(ctx, connector, reason):
@@ -57,17 +57,12 @@ class factory(protocol.ClientFactory):
 
     reactor.stop()
 
-  class protocol(http.HTTPClient):
+  class protocol(protocol.Protocol):
     def connectionMade(ctx):
-      ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*server.socket.getsockname()))
+      ctx.transport.write('GET {0}:{1} HTTP/1.1\r\n\r\n'.format(*origin.socket.getsockname()))
 
       # Disconnect before the proxy sends the response headers
       ctx.transport.loseConnection()
-
-    # Avoid calling undefined handleResponse() at the end of the content or
-    # when the connection closes
-    def handleResponseEnd(ctx):
-      pass
 
 tcp.Connector('localhost', 8080, factory(), 30, None, reactor).connect()
 
