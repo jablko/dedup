@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 print '''1..1 shortClientDisconnect
-# The proxy doesn't crash if the client disconnects before the proxy sends the
-# response headers'''
+# The proxy doesn't crash if the client disconnects before the proxy
+# sends the response headers'''
 
 from twisted.internet import error, protocol, reactor, tcp
 from twisted.web import http

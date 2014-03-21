@@ -24,15 +24,17 @@ class factory(http.HTTPFactory):
         ctx.setResponseCode(404)
 
         # Don't send a Content-Length header or a final chunk because
-        # HttpTunnel::producer_run() sends an HTTP_TUNNEL_EVENT_PRECOMPLETE
-        # event at the end of the message which causes
-        # HttpSM::tunnel_handler_server() to turn off negative caching.
+        # HttpTunnel::producer_run() sends an
+        # HTTP_TUNNEL_EVENT_PRECOMPLETE event at the end of the
+        # message which causes HttpSM::tunnel_handler_server() to turn
+        # off negative caching.
         #
         # Write some content to reach
         # ink_assert(cache_info->response_get()->valid()) in
-        # HttpTransact::set_headers_for_cache_write().  It's called when
-        # TransformTerminus sends a TRANSFORM_READ_READY event, but the
-        # transformation was only called at the end of the message or if the
+        # HttpTransact::set_headers_for_cache_write().  It's called
+        # when TransformTerminus sends a TRANSFORM_READ_READY event,
+        # but the transformation was only called at the end of the
+        # message or if the
         # origin started sending content.
         ctx.write('negativeCaching')
 
