@@ -64,8 +64,8 @@ class factory(protocol.ClientFactory):
     # the proxy sent a Content-Length header vs. a chunked response).
     # (Override connectionLost() when the proxy crashes or stop the reactor.)
     #
-    # Data that was already received will be processed (the end of the
-    # headers), then shutdown events will fire (connections will be closed),
+    # Data that was already received will get processed (the end of the
+    # headers), then shutdown events will fire (connections will get closed),
     # and then finally the reactor will grind to a halt.
     def handleResponseEnd(ctx):
       pass

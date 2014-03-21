@@ -8,10 +8,10 @@
  * Compute the SHA-256 digest of the content, write it to the cache and store
  * the request URL at that key.
  *
- * Implement TS_HTTP_SEND_RESPONSE_HDR_HOOK to check the "Location: ..." and
- * "Digest: SHA-256=..." headers.  Use TSCacheRead() to check if the URL in the
- * "Location: ..." header is already cached.  If not, potentially rewrite that
- * header.  Do this after responses are cached because the cache will change.
+ * Implement TS_HTTP_SEND_RESPONSE_HDR_HOOK to check the Location and Digest
+ * headers.  Use TSCacheRead() to check if the URL in the Location header is
+ * already cached.  If not, potentially rewrite that header.  Do this after
+ * responses are cached because the cache will change.
  *
  * More details are on the [wiki page] in the Traffic Server wiki.
  *
@@ -44,8 +44,7 @@ typedef struct {
 
 } TransformData;
 
-/* TSCacheRead() and TSVConnRead() data: Check the "Location: ..." and
- * "Digest: SHA-256=..." headers */
+/* TSCacheRead() and TSVConnRead() data: Check the Location and Digest headers */
 
 typedef struct {
   TSHttpTxn txnp;
@@ -53,14 +52,14 @@ typedef struct {
   TSMBuffer resp_bufp;
   TSMLoc hdr_loc;
 
-  /* "Location: ..." header */
+  /* Location header */
   TSMLoc location_loc;
 
   /* Cache key */
   TSMLoc url_loc;
   TSCacheKey key;
 
-  /* "Digest: SHA-256=..." header */
+  /* Digest header */
   TSMLoc digest_loc;
 
   /* Digest header field value index */
@@ -164,7 +163,7 @@ write_vconn_write_complete(TSCont contp, void */* edata ATS_UNUSED */)
   WriteData *data = (WriteData *) TSContDataGet(contp);
   TSContDestroy(contp);
 
-  /* The object is not committed to the cache until the vconnection is closed.
+  /* The object is not committed to the cache until the VConnection is closed.
    * When all the data has been transferred, the user (contp) must do a
    * TSVConnClose() */
   TSVConnClose(data->connp);
@@ -452,8 +451,8 @@ http_read_response_hdr(TSCont /* contp ATS_UNUSED */, void *edata)
   return 0;
 }
 
-/* Implement TS_HTTP_SEND_RESPONSE_HDR_HOOK to check the "Location: ..." and
- * "Digest: SHA-256=..." headers */
+/* Implement TS_HTTP_SEND_RESPONSE_HDR_HOOK to check the Location and Digest
+ * headers */
 
 /* Read the URL stored at the digest */
 
@@ -502,7 +501,7 @@ rewrite_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
 
   switch (event) {
 
-  /* Yes: Rewrite the "Location: ..." header and reenable the response */
+  /* Yes: Rewrite the Location header and reenable the response */
   case TS_EVENT_CACHE_OPEN_READ:
 
     TSMimeHdrFieldValuesClear(data->resp_bufp, data->hdr_loc, data->location_loc);
@@ -590,8 +589,8 @@ vconn_read_ready(TSCont contp, void */* edata ATS_UNUSED */)
   return 0;
 }
 
-/* TSCacheRead() and TSVConnRead() handler: Check if the "Digest: SHA-256=..."
- * digest already exists in the cache */
+/* TSCacheRead() and TSVConnRead() handler: Check if the digest already exists
+ * in the cache */
 
 static int
 digest_handler(TSCont contp, TSEvent event, void *edata)
@@ -616,7 +615,7 @@ digest_handler(TSCont contp, TSEvent event, void *edata)
   return 0;
 }
 
-/* TSCacheRead() handler: Check if the "Location: ..." URL is already cached */
+/* TSCacheRead() handler: Check if the Location URL is already cached */
 
 static int
 location_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
@@ -635,7 +634,7 @@ location_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
   case TS_EVENT_CACHE_OPEN_READ:
     break;
 
-  /* No: Check if the "Digest: SHA-256=..." digest already exists in the cache */
+  /* No: Check if the digest already exists in the cache */
   case TS_EVENT_CACHE_OPEN_READ_FAILED:
 
     /* No allocation, freed with data->resp_bufp? */
@@ -647,7 +646,7 @@ location_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
 
     TSHandleMLocRelease(data->resp_bufp, data->hdr_loc, data->digest_loc);
 
-    /* Check if the "Digest: SHA-256=..." digest already exists in the cache */
+    /* Check if the digest already exists in the cache */
 
     contp = TSContCreate(digest_handler, NULL);
     TSContDataSet(contp, data);
@@ -674,9 +673,9 @@ location_handler(TSCont contp, TSEvent event, void */* edata ATS_UNUSED */)
   return 0;
 }
 
-/* Use TSCacheRead() to check if the URL in the "Location: ..." header is
- * already cached.  If not, potentially rewrite that header.  Do this after
- * responses are cached because the cache will change. */
+/* Use TSCacheRead() to check if the URL in the Location header is already
+ * cached.  If not, potentially rewrite that header.  Do this after responses
+ * are cached because the cache will change. */
 
 static int
 http_send_response_hdr(TSCont contp, void *edata)
@@ -704,12 +703,12 @@ http_send_response_hdr(TSCont contp, void *edata)
 
   /* Assumption: We want to minimize cache reads, so check first that
    *
-   *    1.  the response has a "Location: ..." header and
-   *    2.  the response has a "Digest: SHA-256=..." header.
+   *    1.  the response has a Location header and
+   *    2.  the response has a Digest header.
    *
    * Then scan if the URL or digest already exist in the cache. */
 
-  /* If the response has a "Location: ..." header */
+  /* If the response has a Location header */
   data->location_loc = TSMimeHdrFieldFind(data->resp_bufp, data->hdr_loc, TS_MIME_FIELD_LOCATION, TS_MIME_LEN_LOCATION);
   if (!data->location_loc) {
     TSHandleMLocRelease(data->resp_bufp, TS_NULL_MLOC, data->hdr_loc);
@@ -722,9 +721,9 @@ http_send_response_hdr(TSCont contp, void *edata)
 
   TSUrlCreate(data->resp_bufp, &data->url_loc);
 
-  /* If we can't parse or lookup the "Location: ..." URL, should we still check
-   * if the response has a "Digest: SHA-256=..." header?  No: Can't parse or
-   * lookup the URL in the "Location: ..." header is an error. */
+  /* If we can't parse or lookup the Location URL, should we still check if the
+   * response has a Digest header?  No: Can't parse or lookup the URL in the
+   * Location header is an error. */
 
   /* No allocation, freed with data->resp_bufp? */
   value = TSMimeHdrFieldValueStringGet(data->resp_bufp, data->hdr_loc, data->location_loc, -1, &length);
@@ -754,7 +753,7 @@ http_send_response_hdr(TSCont contp, void *edata)
     return 0;
   }
 
-  /* ... and a "Digest: SHA-256=..." header */
+  /* ... and a Digest header */
   data->digest_loc = TSMimeHdrFieldFind(data->resp_bufp, data->hdr_loc, "Digest", 6);
   while (data->digest_loc) {
 
@@ -767,7 +766,7 @@ http_send_response_hdr(TSCont contp, void *edata)
         continue;
       }
 
-      /* Check if the "Location: ..." URL is already cached */
+      /* Check if the Location URL is already cached */
 
       contp = TSContCreate(location_handler, NULL);
       TSContDataSet(contp, data);
@@ -784,7 +783,7 @@ http_send_response_hdr(TSCont contp, void *edata)
     data->digest_loc = next_loc;
   }
 
-  /* Didn't find a "Digest: SHA-256=..." header, just reenable the response */
+  /* Didn't find a Digest header, just reenable the response */
 
   TSCacheKeyDestroy(data->key);
 
