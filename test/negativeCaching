@@ -34,8 +34,7 @@ class factory(http.HTTPFactory):
         # HttpTransact::set_headers_for_cache_write().  It's called
         # when TransformTerminus sends a TRANSFORM_READ_READY event,
         # but the transformation was only called at the end of the
-        # message or if the
-        # origin started sending content.
+        # message or if the origin started sending content (TS-2589).
         ctx.write('negativeCaching')
 
 origin = tcp.Port(0, factory())

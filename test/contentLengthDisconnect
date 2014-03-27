@@ -69,7 +69,7 @@ class factory(protocol.ClientFactory):
     # Avoid calling undefined handleResponse() at the end of the
     # message (if the proxy sent the wrong Content-Length header).
     # (Override connectionLost() when the proxy closes the client
-    # connection or stop the reactor.)
+    # connection or we stop the reactor.)
     def handleResponseEnd(ctx):
       pass
 

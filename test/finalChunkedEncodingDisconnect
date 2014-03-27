@@ -77,7 +77,7 @@ class factory(protocol.ClientFactory):
     # Avoid calling undefined handleResponse() at the end of the
     # message (if the proxy sent a Content-Length header vs. a chunked
     # response).  (Override connectionLost() when the proxy crashes or
-    # stop the reactor.)
+    # we stop the reactor.)
     #
     # Data that was already received will get processed (the end of
     # the headers), then shutdown events will fire (connections will

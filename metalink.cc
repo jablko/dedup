@@ -231,10 +231,11 @@ write_handler(TSCont contp, TSEvent event, void *edata)
  * Clean up the output buffer on TS_EVENT_VCONN_WRITE_COMPLETE and not
  * before.  We are guaranteed a TS_EVENT_VCONN_WRITE_COMPLETE event
  * *unless* we are "closed".  In that case we instead get a
- * TS_EVENT_IMMEDIATE event where TSVConnClosedGet() is one, so clean
- * up the output buffer in that case as well.  We'll only ever get one
- * event where TSVConnClosedGet() is one and it will be our last, so
- * there's no risk of a double free.
+ * TS_EVENT_IMMEDIATE event where TSVConnClosedGet() is one.  We'll
+ * only ever get one event where TSVConnClosedGet() is one and it will
+ * be our last, so we *must* check for this case and clean up then
+ * too.  Because we'll only ever get one such event and it will be our
+ * last, there's no risk of double freeing.
  *
  * The response headers get sent when TSVConnWrite() gets called and
  * not before.  (We could potentially edit them until then.)
@@ -244,30 +245,68 @@ write_handler(TSCont contp, TSEvent event, void *edata)
  * TSVIONTodoGet() and handle the end of the input independently from
  * the TS_EVENT_VCONN_WRITE_COMPLETE event from downstream.
  *
- * When TSVConnClosedGet() is one, *we* are "closed".  Some state is
- * already inconsistent and there's nothing to do except clean up.
- * (This happens when the response is 304 Not Modified or when the
- * client or origin disconnect before the message is complete.)
+ * When TSVConnClosedGet() is one, *we* are "closed".  We *must* check
+ * for this case, if only to clean up allocated data.  Some state is
+ * already inconsistent.  (This happens when the response is 304 Not
+ * Modified or when the client or origin disconnect before the message
+ * is complete.)
  *
  * When TSVIOReaderGet() is NULL, upstream is "closed".  In that case
  * it's clearly an error to call TSIOBufferReaderAvail(), it's also an
  * error at that point to send any events upstream with TSContCall().
  * (This happens when the content length is zero or when we get the
- * final chunk of a "Transfer-Encoding: chunked" response.)
+ * final chunk of a chunked response.)
  *
  * The input is complete only when TSVIONTodoGet() is zero.  (Don't
  * update the downstream nbytes otherwise!)  Update the downstream
- * nbytes when the input is complete in case the response is
- * "Transfer-Encoding: chunked" (in which case nbytes is unknown until
- * then).  Downstream will (normally) send the
- * TS_EVENT_VCONN_WRITE_COMPLETE event (and the final chunk if the
- * response is "Transfer-Encoding: chunked") when ndone equals nbytes
+ * nbytes when the input is complete in case the response is chunked
+ * (in which case nbytes is unknown until then).  Downstream will
+ * (normally) send the TS_EVENT_VCONN_WRITE_COMPLETE event (and the
+ * final chunk if the response is chunked) when ndone equals nbytes
  * and not before.
  *
  * Send our own TS_EVENT_VCONN_WRITE_COMPLETE event upstream when the
  * input is complete otherwise HttpSM::update_stats() won't get called
  * and the transaction won't get logged.  (If there are upstream
- * transformations they won't get a chance to clean up otherwise!) */
+ * transformations they won't get a chance to clean up otherwise!)
+ *
+ * Summary of the cases into which each event can fall:
+ *
+ *    Closed        *We* are "closed".  Clean up allocated data.
+ *
+ *       Start      First (and last) time the handler was called.
+ *                  (This happens when the response is 304 Not Modified.)
+ *
+ *       Not start  (This happens when the client or origin disconnect
+ *                  before the message is complete.)
+ *
+ *    Start         First time the handler was called.  Initialize
+ *                  data here because we can't call TSVConnWrite()
+ *                  before TS_HTTP_RESPONSE_TRANSFORM_HOOK.
+ *
+ *       Content length
+ *
+ *       Chunked response
+ *
+ *    Upstream closed
+ *                  (This happens when the content length is zero or
+ *                  when we get the final chunk of a chunked
+ *                  response.)
+ *
+ *    Available input
+ *
+ *    Input complete
+ *
+ *       Deja vu    There might be multiple TS_EVENT_IMMEDIATE events
+ *                  between the end of the input and the
+ *                  TS_EVENT_VCONN_WRITE_COMPLETE event from
+ *                  downstream.
+ *
+ *       Not deja vu
+ *                  Tell downstream and thank upstream.
+ *
+ *    Downstream complete
+ *                  Clean up the output buffer. */
 
 static int
 vconn_write_ready(TSCont contp, void */* edata ATS_UNUSED */)
@@ -280,10 +319,10 @@ vconn_write_ready(TSCont contp, void */* edata ATS_UNUSED */)
   TransformData *transform_data = (TransformData *) TSContDataGet(contp);
 
   /* Check if we are "closed" before doing anything else to avoid
-   * errors.  Some state is already inconsistent and there's nothing
-   * to do except clean up.  (This happens if the response is 304 Not
-   * Modified or if the client or origin disconnect before the message
-   * is complete.) */
+   * errors.  We *must* check for this case, if only to clean up
+   * allocated data.  Some state is already inconsistent.  (This
+   * happens if the response is 304 Not Modified or if the client or
+   * origin disconnect before the message is complete.) */
   int closed = TSVConnClosedGet(contp);
   if (closed) {
     TSContDestroy(contp);
@@ -310,11 +349,9 @@ vconn_write_ready(TSCont contp, void */* edata ATS_UNUSED */)
     transform_data->output_bufp = TSIOBufferCreate();
     TSIOBufferReader readerp = TSIOBufferReaderAlloc(transform_data->output_bufp);
 
-    /* Determines the "Content-Length: ..." header
-     * (or "Transfer-Encoding: chunked") */
+    /* Determines the Content-Length header (or a chunked response) */
 
-    /* Avoid failed assert "nbytes >= 0" if
-     * "Transfer-Encoding: chunked" */
+    /* Avoid failed assert "nbytes >= 0" if the response is chunked */
     int nbytes = TSVIONBytesGet(input_viop);
     transform_data->output_viop = TSVConnWrite(output_connp, contp, readerp, nbytes < 0 ? INT64_MAX : nbytes);
 
@@ -324,8 +361,7 @@ vconn_write_ready(TSCont contp, void */* edata ATS_UNUSED */)
   /* Then deal with any input that's available now.  Avoid failed
    * assert "sdk_sanity_check_iocore_structure(readerp) == TS_SUCCESS"
    * in TSIOBufferReaderAvail() if the content length is zero or when
-   * we get the final chunk of a "Transfer-Encoding: chunked"
-   * response. */
+   * we get the final chunk of a chunked response. */
   TSIOBufferReader readerp = TSVIOReaderGet(input_viop);
   if (readerp) {
 
@@ -378,7 +414,7 @@ vconn_write_ready(TSCont contp, void */* edata ATS_UNUSED */)
 
     /* Avoid failed assert "c->alive == true" in TSContCall() if the
      * content length is zero or when we get the final chunk of a
-     * "Transfer-Encoding: chunked" response */
+     * chunked response */
     if (readerp) {
       TSContCall(TSVIOContGet(input_viop), TS_EVENT_VCONN_WRITE_COMPLETE, input_viop);
     }
